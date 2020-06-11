@@ -1,282 +1,55 @@
-<!DOCTYPE html>
-<html lang="en">
-  <meta charset="UTF-8" /><meta
-    name="viewport"
-    content="width=device-width,initial-scale=1"
-  /><title>
-    FizzBuzz Mario World: Learning ASM Programming & Having Fun with Super Mario</title
-  ><link
-    rel="stylesheet"
-    type="text/css"
-    href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css"
-  /><link rel="stylesheet" type="text/css" href="../../main.css" />
-  <main>
-    <div class="heading">
-      <h1>
-        FizzBuzz Mario World: Learning ASM Programming & Having Fun with Super
-        Mario
-      </h1>
-      <p class="date">06-01-2020</p>
-    </div>
-    <p>
-      I've wanted to learn
-      <a href="https://en.wikipedia.org/wiki/Assembly_language" target="_blank"
-        >Assembly (ASM) language</a
-      >
-      programming for a long time. I finally found the perfect project to do it:
-      hacking Super Mario World (SMW). It was a lot of fun so I thought I'd
-      document the process.
-    </p>
-    <p>
-      This post is intended for all audiences. Those already familiar with ASM
-      can get a peak at the
-      <a href="https://en.wikipedia.org/wiki/WDC_65C816" target="_blank"
-        >65c816 microprocessor</a
-      >
-      and its implementation for the Super Nintendo (SNES). Those familiar with
-      programming can get a gentle introduction to ASM. And my hope is that I've
-      explained this stuff well enough so that anyone can appreciate the beauty
-      of some of what goes on under the hood of the SNES.
-    </p>
-    <p>
-      The SMW
-      <a href="https://en.wikipedia.org/wiki/ROM_hacking" target="_blank"
-        >ROM hacking</a
-      >
-      community is vibrant. It's an impressively talented and creative community
-      that makes many versions of SMW with custom graphics, music, level design,
-      and game physics. For example, check out
-      <a href="https://www.youtube.com/watch?v=oH0T5G7IXtY" target="_blank"
-        >this boss battle</a
-      >
-      from the popular hack JUMP 1/2. Somehow stumbling upon this hack and
-      others like it on YouTube and Twitch started me down this rabbit hole.
-    </p>
-    <p>
-      You can find the complete code and a list of the resources mentioned in
-      this post on
-      <a
-        href="https://github.com/thoughtbyte/super-fizzbuzz-world"
-        target="_blank"
-        >GitHub</a
-      >.
-    </p>
-    <h2>FizzBuzz Mario</h2>
-    <p>
-      <a href="https://en.wikipedia.org/wiki/Fizz_buzz" _target="blank"
-        >FizzBuzz</a
-      >
-      is a common problem that beginner programmers solve for practice. The
-      objective is to loop from 1 to 100 and:
-    </p>
-    <ul>
-      <li>for every number divisible by 3, print 'fizz'</li>
-      <li>for every number divisible by 5, print 'buzz'</li>
-      <li>for every number divisible by 3 and 5, print 'fizz buzz'</li>
-      <li>otherwise print the number</li>
-    </ul>
-    <p>
-      The goal of this project is to solve a problem similar to FizzBuzz by
-      writing custom ASM that can be patched into the SMW code. The perfect
-      context for FizzBuzz in SMW is the coin count. At any one time the player
-      can have between 0 and 99 coins. Additionally, Mario can have 1 of 4
-      power-up statuses: small, big, cape, and fire. Here's the behavior we'll
-      hack into our version of SMW:
-    </p>
-    <ul>
-      <li>when coin count is divisible by 3, set status to big</li>
-      <li>when coin count is divisible by 5, set status to cape</li>
-      <li>when coin count is divisible by 3 and 5, set status to fire</li>
-      <li>otherwise set status to small</li>
-    </ul>
-    <h2>Getting Started</h2>
-    <p>
-      After a few minutes of searching the web I found the source of most of the
-      information I'll be sharing:
-      <a href="https://www.smwcentral.net/" target="_blank">SWM Central</a>. You
-      can find a full list of resources at the end of this article but the
-      guides I found most helpful were Ersanio's
-      <a
-        href="https://ersanio.gitbook.io/assembly-for-the-snes/"
-        target="_blank"
-        >Assembly for the SNES</a
-      >
-      and
-      <a
-        href="https://www.smwcentral.net/?p=section&a=details&id=15073"
-        target="_black"
-        >Assembly for Super Mario World</a
-      >. The former assumes no knowledge of ASM. The latter refreshes the ASM
-      info. from the former and then goes into how to apply a simple patch
-      similar to the one we'll be writing. Both are quick reads and I recommend
-      them to any programmer that wants to know what ASM programming feels like.
-    </p>
-    <h3>Memory</h3>
-    <p>
-      ASM is a low-level language with which you deal directly with individual
-      bytes of memory. SNES games are comprised of read-only memory (ROM) and
-      random-access memory (RAM). You can think of the ROM as the game cartridge
-      itself. It's where all the code for how the game works is stored. For
-      example, the code that instructs the SNES what to do when the player gets
-      1 coin is in ROM. This memory, as the name implies, is usually only ever
-      read from. Our goal is to hack this ROM by overwriting a small part of it
-      and thus changing how the game behaves.
-    </p>
-    <p>
-      The RAM is on the SNES itself and it's where values are stored that will
-      change while the game is played. The coin counter value needs to live in
-      RAM because it changes often. The same goes for the player's power-up
-      status.
-    </p>
-    <p>
-      In both ROM and RAM, memory is a long list of addresses where values can
-      be stored. These addresses are represented in
-      <a href="https://en.wikipedia.org/wiki/Hexadecimal" target="_blank"
-        >hexadecimal (hex)</a
-      >. For our purposes we'll need to figure out the memory addresses in RAM
-      where the values of the coin count and the power-up status are stored, and
-      where in ROM we can insert some custom code.
-    </p>
-    <p>
-      Fortunately, people have completely disassembled SMW and mapped the RAM
-      and ROM, so finding what we need is a simple web search. The ROM map can
-      be found on
-      <a
-        href="https://www.smwcentral.net/?p=memorymap&game=smw&u=0&address=&sizeOperation=%3D&sizeValue=&region[]=ram&type=*&description="
-        target="_blank"
-        >SMW Central</a
-      >. The ROM begins at address <code>$7E0000</code> and ends at
-      <code>$7FC800</code>. The <code>$</code> indicates hex. By searching a few
-      relevant keywords I found that the coin count is stored at address
-      <code>$7E0019</code> and the power-up status is stored at address
-      <code>$7E00DBF</code>. The entry for power-up status also indicates the 4
-      possible values for this address and what they mean: 1 for big Mario, 2
-      for cape Mario, 3 for fire Mario, and 0 for small Mario.
-    </p>
-    <p>
-      This gives us a basic idea of what our ASM code will need to do, in
-      pseudocode:
-    </p>
-    <pre><code>get the value of RAM address $7E0019 (coin count)
+<!doctypehtml><html lang="en"><meta charset="UTF-8"><meta name="viewport"content="width=device-width,initial-scale=1"><meta name="description"content="An introduction to Assembly language programming in the context of hacking the behavior of Super Mario World for the Super Nintendo."><meta property="og:title"content="European Travel Destinations"><meta property="og:description"content="An introduction to Assembly language programming in the context of hacking the behavior of Super Mario World for the Super Nintendo."><meta property="og:image"content="../../img/fbmw_share_img.png"><meta property="og:url"content="https://computebeauty.com/posts/fbwm/index.html"><meta name="keywords"content="Super Mario World,SMW,Assembly language,ASM,ASM programming,SMW ROM hack,ROM hacking,SNES,Super Nintendo,Fizz buzz"><title>FizzBuzz Mario World: Learning Assembly Language & Having Some Fun</title><link rel="stylesheet"type="text/css"href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css"><link rel="stylesheet"type="text/css"href="../../main.min.css"><main><div class="heading"><h1>FizzBuzz Mario World: Learning Assembly Language & Having Some Fun</h1><p class="date">06.11.2020</div><p>I've wanted to learn <a href="https://en.wikipedia.org/wiki/Assembly_language"target="_blank">Assembly language (ASM)</a> programming for a long time. I finally found the perfect project to do it: hacking Super Mario World (SMW). It was a lot of fun so I thought I'd document the process.<p>The SMW <a href="https://en.wikipedia.org/wiki/ROM_hacking"target="_blank">ROM hacking</a> community is vibrant. It's an impressively talented and creative community that makes a lot of awesome games with custom graphics, music, level design, and game physics. Stumbling upon <a href="https://www.youtube.com/results?search_query=super+mario+world+rom+hack"target="_blank">these hacks</a> on YouTube started me down this rabbit hole.<p>TLDR: the code and a list of the resources mentioned in this post can be found on <a href="https://github.com/thoughtbyte/super-fizzbuzz-world"target="_blank">GitHub</a>.<h2>FizzBuzz Mario</h2><p><a href="https://en.wikipedia.org/wiki/Fizz_buzz"target="_blank">FizzBuzz</a> is a common problem that beginner programmers solve for practice. The objective is to loop from 1 to 100 and:<ul><li>for every number divisible by 3, print 'fizz'<li>for every number divisible by 5, print 'buzz'<li>for every number divisible by 3 and 5, print 'fizz buzz'<li>otherwise print the number</ul><p>The goal of this project is to solve a problem similar to FizzBuzz by writing custom ASM that can be patched, or inserted, into the SMW code. The perfect context for FizzBuzz in SMW is the coin count. At any one time the player can have between 0 and 99 coins. Additionally, Mario can have 1 of 4 power-up statuses: small, big, cape, and fire. Here's the behavior we'll hack into our version of SMW:<ul><li>when coin count is divisible by 3, set status to big<li>when coin count is divisible by 5, set status to cape<li>when coin count is divisible by 3 and 5, set status to fire<li>otherwise set status to small</ul><p>Here's game-play of the finished product:<div class="videoContainer"><iframe class="video"src="https://www.youtube.com/embed/APwAE0wiGF8"frameborder="0"allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"allowfullscreen></iframe></div><h2>Getting Started</h2><p>After a few minutes of searching the web I found the source of most of the information I'll be sharing: <a href="https://www.smwcentral.net/"target="_blank">SWM Central</a>. You can find a full list of resources at the end of this article but the guides I found most helpful were Ersanio's <a href="https://ersanio.gitbook.io/assembly-for-the-snes/"target="_blank">Assembly for the SNES</a> and <a href="https://www.smwcentral.net/?p=section&a=details&id=15073"target="_black">Assembly for Super Mario World</a>. The former assumes no knowledge of ASM. The latter refreshes the ASM information from the former and then goes into how to apply a simple patch similar to the one we'll be writing. Both are quick reads and I recommend them to any programmer that wants to know what ASM programming feels like.<h3>Memory</h3><p>ASM is a low-level language with which you deal directly with individual bytes of memory. SNES games are comprised of read-only memory (ROM) and random-access memory (RAM). You can think of the ROM as the game cartridge itself. Instead of an actual cartridge and SNES, the ROM for present purposes is a computer file that you can play on a <a href="http://www.snes9x.com/"target="_blank">SNES emulator</a>. The ROM is where all the code for how the game works is stored. This memory, as the name implies, is usually only ever read from. Our goal is to hack this ROM by overwriting a small part of it thus changing how the game behaves.<p>The RAM is on the SNES itself and it's where values are stored that will change while the game is played. The coin counter value needs to live in RAM because it changes often. The same goes for the player's power-up status.<p>In both ROM and RAM, memory is a long list of addresses where values can be stored. These addresses are represented in <a href="https://en.wikipedia.org/wiki/Hexadecimal"target="_blank">hexadecimal (hex)</a>. For our purposes we'll need to figure out the memory addresses for three things: the value of the coin count, the value of the power-up status, and where to insert some custom code.<p>Fortunately, people have completely disassembled SMW and mapped the RAM and ROM, so finding what we need is a simple web search. The RAM map can be found on <a href="https://www.smwcentral.net/?p=memorymap&game=smw&u=0&address=&sizeOperation=%3D&sizeValue=&region[]=ram&type=*&description="target="_blank">SMW Central</a>. The RAM begins at address <code>$7E0000</code> and ends at <code>$7FC800</code>. The <code>$</code> indicates hex. By searching a few relevant keywords I found that the coin count is stored at address <code>$7E0019</code> and the power-up status is stored at address <code>$7E00DBF</code>. The entry for power-up status also indicates the 4 possible values for this address and what they mean: 1 for big Mario, 2 for cape Mario, 3 for fire Mario, and 0 for small Mario.<p>This gives us a basic idea of what our ASM code will need to do, in pseudocode:<pre><code>every time the coin count increases:
+  get the value of RAM address $7E0019 (coin count)
   if that value is divisible by 15
     store 3 in RAM address $7E00DBF (power-up status)
   else if that value is divisible by 5
     store 2 in RAM address $7E00DBF
   else if that value is divisible by 3
     store 1 in RAM address $7E00DBF
-  else store 0 in RAM address 7E00DBF</code></pre>
-    <p>
-      Now we need to figure out where to insert our code. I want this code to
-      run whenever the player gets a coin so I searched for "coin count" within
-      the ROM map and found <code>$008F1D</code>, a 30 byte subroutine that
-      "handles actually increasing the player's coin count and giving a life
-      from 100 coins." This is a good start, but we can't just insert code into
-      30 bytes of ROM without seeing what it does. We will break everything if
-      we're not careful. Unfortunately the ROM map on SWM Central doesn't have
-      the actual code stored at this address. But then I found
-      <a
-        href="https://www.smwcentral.net/?p=section&a=details&id=21822"
-        target="_blank"
-        >All.log++</a
-      >: a complete disassembly of the SMW source code, in ASM, with extensive
-      comments and labels.
-    </p>
-    <p>
-      Inspecting the disassembled SMW source code at this coin count subroutine
-      address, I noticed that the actual coin count is increased at address
-      <code>$008F25</code>. That is, this is the piece of ROM that literally
-      adds 1 to the coin count every single time the player receives 1 coin. But
-      instead of just increasing the coin count by 1, I want to patch the ROM so
-      that when the code at this address gets executed, the SNES
-      <i>also</i> runs my FizzBuzz code.
-    </p>
-    <p>
-      Now we have all of the relevant memory addresses that we need, and we have
-      the pseudocode that we need to run at the coin count increase ROM address.
-      Time for the actual code.
-    </p>
-
-    <h2>Writing the Code</h2>
-    <p>Our first two lines are easy:</p>
-    <pre><code>!PowerUpStatus = $0019
-!CoinCount = $0DBF</code></pre>
-    <p>
-      We simply set the RAM memory addresses that we need for the coin count and
-      power-up status to some labels so they'll be easier to refer to in the
-      code. Notice that we dropped the <code>7E</code> from both addresses. We
-      don't need it. These lines don't actually get patched into the ROM. All
-      occurrences of the labels in the code that we will write will get replaced
-      with the addresses.
-    </p>
-    <h3>Hijacking the Coin Count Increase Code</h3>
-    <p>
-      We know where we want to insert our code: the address where the coin count
-      is increased. But we can't insert <i>all</i> of our code into this
-      address, we'll overwrite a lot of stuff and break the game. We can only
-      insert a few bytes, and we have to make sure the bytes that we overwrite
-      are executed by us in our own code so that everything that the original
-      code was supposed to do still happens. So what we'll do is insert one
-      instruction in the ROM at the coin count increase address that tells the
-      processor to <i>jump</i> to the rest of our code, and we'll tell the
-      assembler to insert our code in some free space, so we don't overwrite
-      anything (sneak peak, at the end of our code we'll tell the SNES to jump
-      back to where we jumped from, so the game continues as usual). Here's what
-      that jump to our code looks like:
-    </p>
-    <pre><code>ORG $008F25
-autoclean JSL FizzBuzz
+  else store 0 in RAM address 7E00DBF</code></pre><p>Now we need to figure out where to insert our code. I want this code to run whenever the player gets a coin so I searched for "coin count" within the ROM map and found <code>$008F1D</code>, a 30 byte piece of code that "handles actually increasing the player's coin count and giving a life from 100 coins." This is a good start, but we can't just insert code into 30 bytes of ROM without seeing what it does. We will break everything if we're not careful. Unfortunately the ROM map on SWM Central doesn't have the actual code stored at this address. But then I found <a href="https://www.smwcentral.net/?p=section&a=details&id=21822"target="_blank">All.log++</a>: a complete disassembly of the SMW source code, in ASM, with extensive comments and labels.<p>Inspecting the disassembled SMW source code at this coin count code address, I noticed that the address where the coin count is actually increased is <code>$008F25</code>. That is, this is the memory address of ROM that stores the instruction that literally adds 1 to the coin count every single time the player receives 1 coin. But instead of just increasing the coin count by 1, I want to patch the ROM so that when the code at this address gets executed, the SNES <i>also</i> runs my FizzBuzz code.<p>Now we have all of the relevant memory addresses that we need, and we have the pseudocode that we need to run at the coin count increase ROM address. Now we assemble.<h2>Writing the Code</h2><p>Our first two lines are easy:<pre><code>!PowerUpStatus = $0019
+!CoinCount = $0DBF</code></pre><p>We simply set the RAM memory addresses that we need for the coin count and power-up status to some labels so they'll be easier to refer to in the code. Notice that we dropped the <code>7E</code> from both addresses. We don't need it. These lines don't actually get patched into the ROM. All occurrences of the labels in the code that we will write will get replaced with the addresses by the assembler. The assembler is the thing that will take our code and insert it into the ROM.<h3>Hijacking the Coin Count Increase Code</h3><p>We know where we want to insert our code: the ROM address where the coin count is increased. But we can't insert <i>all</i> of our code into this address, we'll overwrite a lot of stuff and break the game. We can only insert a few bytes, and we have to make sure the bytes that we overwrite are executed by us in our own code so that everything that the original code was supposed to do still happens. So what we'll do is insert one instruction in the ROM at the coin count increase address that tells the processor to <i>jump</i> to the rest of our code. Then we'll tell the assembler to insert our code in some free space so we don't overwrite anything. Here's what that looks like:<pre><code>ORG $008F25
+JSL FizzBuzz
 NOP
 NOP
 
-freecode</code></pre>
-    <p>
-      <code>ORG $008F25</code> instructs the assembler to insert the following
-      instruction directly after it into the ROM address where the coin count is
-      increased. <code>autoclean</code> is used by the assembler to clean up the
-      code if the patch is applied more than once. I applied the same patch
-      dozens of times to a SMW ROM because it took me awhile to actually get it
-      to work. This command just makes sure that applying the same patch over
-      and over doesn't jack anything up.
-    </p>
-    <p>
-      <code>JSL FizzBuzz</code> is the instruction that we place at the coin
-      counter increase address. What it means is: <b>J</b>ump to the
-      <b>S</b>ubroutine code labeled <code>FizzBuzz</code>. Most ASM operation
-      codes, or opcodes, are menumonic. The J and S are for Jump and Subroutine.
-      We can ignore the L, it's beyond the scope of this.
-    </p>
-    <p>
-      As it turns out, the code I've chosen to overwrite, the coin count
-      increase instruction and another instruction we'll get to at the end, is 6
-      bytes long. The <code>JSL</code> instruction we insert is only 4 bytes
-      long. But the code we insert needs to be the same size as the code we
-      overwrite, otherwise there will be 2 bytes leftover that get executed out
-      of the context of the 4 bytes that normally preceded them. To fill those 2
-      bytes, we include 2 <code>NOP</code> instructions. These are
-      <b>N</b>o-<b>OP</b>s, which just means no operations. We do nothing for 2
-      byte to fill up the space not filled up by the 4 bytes of code we
-      inserted. Remember, the 6 bytes of code that we overwrote will be executed
-      in our custom code - as I mentioned earlier, we need to make sure we
-      execute code we overwrite ourselves otherwise the game will likely break.
-    </p>
-    <pre><code>FizzBuzz:
+freecode</code></pre><p><code>ORG $008F25</code> instructs the assembler to insert the following instruction, <code>JSL FizzBuzz</code>, into the ROM address where the coin count is increased. What <code>JSL FizzBuzz</code> means is: <b>J</b>ump to the <b>S</b>ubroutine code labeled <code>FizzBuzz</code>. Most ASM operation codes, or opcodes, are menumonic. The J and S are for Jump and Subroutine. We can ignore the L, it's beyond the scope of this.<p>What's with the <code>NOP</code>s? As it turns out, the code we've chosen to overwrite, the coin count increase instruction, is 3 bytes long. The code we insert, <code>JSL FizzBuzz</code>, is 4 bytes long. So in our attempt to overwrite 1 3 byte long instruction, we overwrote the first byte of a second instruction.<p>The fix for this is that we need remember to execute <i>both instructions that we overwrote</i> in the code <i>we</i> write. The second instruction we overwrite, like the first, is 3 bytes long, for a total of 6 bytes. But again, the code we inserted is only 4 bytes: there are still 2 dangling bytes that were previously part of that second instruction. That's not good. Random, partially overwritten bytes in the code will break the game. So, we include 2 <code>NOP</code> instructions. These are <b>N</b>o <b>OP</b>erations. We do nothing for 2 bytes to fill up the space not filled up by the previous 4 bytes of code we inserted. To recap, we overwrote 6 bytes of 2 instructions with 6 bytes of our own instruction that jumps to our custom code.<p><code>freecode</code> just means find some free space in the ROM to put the rest of our custom ASM code.<h3>The FizzBuzz Subroutine</h3><p>The following code is the beginning of the <code>FizzBuzz</code> subroutine that we referenced above.<pre><code>FizzBuzz:
 INC !CoinCount
 LDA #$0F
 STA $00
 LDA !CoinCount
-JSR Mod</code></pre>
-    <pre><code>BNE TestMod5
+JSR Mod</code></pre><p>The first line is the label. The second, <code>INC !CoinCount</code>, means <b>INC</b>rement the memory address for the coin count by 1. This is what the first instruction of the code we overwrote was supposed to do, so we do it here ourselves.<p>In ASM, one of the most important things is the <a href="https://en.wikipedia.org/wiki/Accumulator_(computing)"target="_blank">accumulator</a>. Essentially, the accumulator (A) is the memory address where the microprocessor stores its results from math and logic operations. We can also store stuff there for use in math operations. <code>LDA #$0F</code> does just that. It <b>L</b>oa<b>D</b>s into the <b>A</b>ccumulator the value 15. 0F is hex for the decimal value 15, and the # means we want the value 15 itself, not what's stored at the memory address 15.<p>We then run <code>STA $00</code>, this <b>ST</b>ores the value of the <b>A</b>ccumulator into memory address <code>$00</code>. This memory address is "scratch" memory that has no assigned purpose other than as a place to store temporary values. We couldn't just store a value directly into <code>$00</code>, instead it was a two-step process: load a value into A, then store the value of A in <code>$00</code>. Next, <code>LDA !CoinCount</code> loads the value of the coin count into A.<p>So now we have two values stored in memory: the coin count, stored in A, and 15, stored in <code>$00</code>. To check if something is divisible by 3 and 5, we can divide it by 15 and check if there's a remainder. Many programming languages have a modulo operator that gives you the remainder of 1 number divided by another. For example, 47 modulo 15 is 2. <code>JSR Mod</code> means <b>J</b>ump to the <b>S</b>ub<b>R</b>outine labeled <code>Mod</code>. ASM for the 65c816 microprocessor doesn't have a modulo operator so we have to write it ourselves. Its explanation is more complicated than the rest and I don't want it to distract us at the moment so you can find it at the end of the post. <code>JSR Mod</code> will find the remainder of the coin count divided by the value in <code>$00</code>, 15. Importantly, it will store that remainder in A. Then we execute the following code:<pre><code>BNE TestMod5
 LDA #$03
 STA !PowerUpStatus
 BRA Return
-TestMod5:</code></pre>
-    <pre><code>LDA #$05
+</code></pre><p><code>BNE TestMod5</code> means <b>B</b>ranch to <code>TestMod5</code> if <b>N</b>ot <b>E</b>qual. It checks if A is equal to 0, and if it isn't, it branches to <code>TestMod5</code> thus skipping the other three instructions in that code snippet. When would A equal 0? When the coin count divided by 15 has 0 as a remainder. If A <i>is</i> 0, then the code won't branch. Instead, <code>LDA #$03</code> loads the value 3 into A, and then <code>STA !PowerUpStatus</code> stores the value of A into the power-up status memory address. 3 is the value for fire Mario.<p>We've just coded the logic so that when the player gets a coin, and the coin count is divisible by 3 & 5, we set Mario to fire Mario. And if if was divisible by 3 & 5, we're done! So we execute <code>BRA Return</code> which means <b>BRA</b>nch to <code>Return</code>. We'll see what that does later. If A did not equal 0, then the coin count was not divisible by 3 and 5, so we didn't set Mario to fire Mario. That means we need to test the next case, whether ot not the coin count is divisible by 5. The following code is where the branch above goes if A mod 15 doesn't equal 0:<pre><code>TestMod5:
+LDA #$05
 STA $00
 LDA !CoinCount
 JSR Mod
 BNE TestMod3
 LDA #$02
 STA !PowerUpStatus
-BRA Return</code></pre>
-  </main>
-</html>
+BRA Return</code></pre><p>I leave it to the reader to work out what's happening here step by step. There's nothing new. We simply repeat what we did above, but for 5. If the coin count mod 5 is not 0, we branch again to test 3:<pre><code>TestMod3:
+LDA #$03
+STA $00
+LDA !CoinCount
+JSR Mod
+BNE SetSmall
+LDA #$01
+STA !PowerUpStatus
+BRA Return
+SetSmall:
+STZ !PowerUpStatus</code></pre><p>There's some more of the same here for 3. But when the coin count mod 3 doesn't equal 0 we branch to <code>SetSmall</code>. This code, <code>STZ !PowerUpStatus</code> <b>ST</b>ores <b>Z</b>ero in the power-up status address. We only reach that code if the coin count wasn't divisible by 3, 5, or 15, so we set Mario to small. If any of those cases set the power-up status, it would've jumped all the way to the <code>Return</code> subroutine:<pre><code>Return:
+LDA !CoinCount
+RTL</code></pre><p>These instructions do two things. First it loads the coin count into A. This is the second instruction that our inserted code overwrote. Recall at the very beginning we inserted a jump to our code into the memory location where the coin count is increased. We overwrote two instructions and <code>LDA !CoinCount</code> was that second instruction, so we do it here before we return to where we inserted our code. Then, we <code>RTL</code> which means <b>R</b>eturn to wherever we <code>JTL</code>ed from.<h3>The Mod Subroutine</h3><p>ASM, at least for the 65c816, doesn't have many opcodes. It doesn't even have multiplication and division, let alone the modulo operator. Writing a modulo subroutine in any other language is simple. If you want to know what <i>x</i> modulo <i>y</i> is, subtract <i>y</i> from <i>x</i>, then check if <i>x</i> is less than 0. If it is, add <i>y</i> back to <i>x</i> and that's your remainder. If it isn't, repeat the subtraction and ask again. Like so:<pre><code>18 modulo 7
+
+18 - 7 = 11
+11 - 7 = 4
+4 - 7 = -3
+
+-3 is less than 0, so the remainder is -3 + 7, 4</code></pre><p>Here is the ASM:<pre><code>Mod:
+SEC
+SBC $00
+BCS Mod
+ADC $00
+RTS</code></pre><p>The key to understanding this is understanding how something called the carry flag works. Admittedly, I know just enough about the carry flag to get this to work, so my explanation is not complete. But what I do know is that if the carry flag is set to 1, <i>and then you subtract a number from the accumulator that produces a negative result</i>, then the carry flag is set to 0. This is good, our modulo algorithm required us to know when we arrived at a negative number.<p>The first thing we do, <code>SEC</code>, is <b>SE</b>t the <b>C</b>arry flag (set it equal to 1). Then we <b>S</b>u<b>B</b>tract with <b>C</b>arry the value stored in <code>$00</code> from A. Remember the code above when we kept putting the coin count in A and either 3, 5, or 15 in <code>$00</code>. This is why.<p>Now that we've subtracted the value in <code>$00</code> from A, we execute <code>BCS Mod</code>. This means <b>B</b>ranch if <b>C</b>arry is <b>S</b>et to <code>Mod</code>. If the subtraction we did resulted in a positive number, then the carry flag is still set, so we go back and do it all again. If the carry flag <i>isn't</i> set, then we know that A is now a negative number, so we continue on. The next thing we do is <code>ADC $00</code>, which means <b>AD</b>d with <b>C</b>arry to A. We add the value in <code>$00</code> to A. What this means is that now the value of A, the accumulator, is the remainder of A initially (the coin count) modulo $00 (15, 5, or 3). And finally, we <code>RTS</code>, or <b>R</b>e<b>T</b>urn from <b>S</b>ubroutine and go back to where we jumped from. There we go. Modulo in assembly in Super Mario World.<h2>Conclusion</h2><p>This project was a lot of fun, and it was the introduction to ASM that I always wanted, without even knowing it. I don't know if I'll have time to continue hacking SMW, but I may try to find other avenues to explore ASM, like embedded programming.<p>As it turns out, this small change of behavior that we patched into SMW is actually a lot of fun! Unfortunately, I can't disseminate the hacked ROM, but if you'd like to play it, please shoot me an email: <a href="mailto:vgabruzzo@gmail.com">vgabruzzo@gmail.com</a>, or simply google around about how to patch the SMW ROM yourself with the code we've written.<h2>Resources</h2><h3>Playing SNES ROMs</h3><p><a href="https://www.smwcentral.net"target="_blank">SMW Central: source for all things SMW</a><br><a href="https://www.smwcentral.net/?p=section&a=details&id=19761"target="_blank">SNES9X: Emulator for Playing SNES ROMs</a><h3>Programming</h3><p><a href="https://ersanio.gitbook.io/assembly-for-the-snes/"target="_blank">Ersanio's Assembly for the SNES</a><br><a href="https://www.smwcentral.net/?p=section&a=details&id=15073"target="_blank">Ersanio's Assembly for Super Mario World</a><br><a href="https://www.smwcentral.net/?p=memorymap&game=smw&u=0&address=&sizeOperation=%3D&sizeValue=&region[]=ram&type=*&description="target="_blank">SMW RAM & ROM Maps</a><br><a href="https://www.smwcentral.net/?p=section&a=details&id=21822"target="_blank">All.log++ Annotated SMW ROM Map</a><br><a href="https://github.com/RPGHacker/asar"target="_blank">SNES Assembler Asar</a></main>
